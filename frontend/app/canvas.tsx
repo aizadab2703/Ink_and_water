@@ -7,21 +7,30 @@ import {
   TouchableOpacity,
   Animated,
   ScrollView,
-  Alert,
-  TouchableWithoutFeedback,
 } from 'react-native';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, RadialGradient, Stop, Rect, Ellipse } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import ViewShot from 'react-native-view-shot';
 import { useApp } from '../src/context/AppContext';
 import { ALL_COLORS, getColorByName, getMixedColor, ColorConfig } from '../src/constants/colors';
 import UnlockOverlay from '../src/components/UnlockOverlay';
 
 const { width, height } = Dimensions.get('window');
 const FADE_DURATION = 180000; // 3 minutes in ms
-const CURRENT_SHIFT_INTERVAL = 45000; // 45 seconds
+const CURRENT_SHIFT_INTERVAL = 8000; // 8 seconds - faster shifts
+
+// Ink size options
+const INK_SIZES = {
+  small: { size: 40, label: 'S' },
+  medium: { size: 70, label: 'M' },
+  large: { size: 110, label: 'L' },
+};
+
+// Water color options
+const WATER_COLORS = [
+  { name: 'Black', bg: '#0a0a0f', shimmer: '#0f1a2a' },
+  { name: 'Blue', bg: '#0a1020', shimmer: '#1a3050' },
+];
 
 interface InkDrop {
   id: string;
@@ -44,22 +53,22 @@ interface Particle {
 
 export default function CanvasScreen() {
   const insets = useSafeAreaInsets();
-  const { data, addColorMix, saveArtwork, newlyUnlocked, clearNewlyUnlocked } = useApp();
-  const viewShotRef = useRef<ViewShot>(null);
-  const canvasRef = useRef<View>(null);
+  const { data, addColorMix, newlyUnlocked, clearNewlyUnlocked } = useApp();
   
   const [selectedColor, setSelectedColor] = useState<ColorConfig>(ALL_COLORS[0]);
   const [inkDrops, setInkDrops] = useState<InkDrop[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
-  const [currentDirection, setCurrentDirection] = useState({ x: 0.5, y: 0.3 });
+  const [currentDirection, setCurrentDirection] = useState({ x: 1, y: 0.5 });
   const [showColorName, setShowColorName] = useState(false);
   const colorNameFade = useMemo(() => new Animated.Value(0), []);
-  const saveAnimation = useMemo(() => new Animated.Value(0), []);
   const [colorsUsedInSession, setColorsUsedInSession] = useState<Set<string>>(new Set());
   const [showUnlock, setShowUnlock] = useState(false);
+  const [selectedSize, setSelectedSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [waterColor, setWaterColor] = useState(WATER_COLORS[0]);
   const inkDropsRef = useRef<InkDrop[]>([]);
   const selectedColorRef = useRef<ColorConfig>(ALL_COLORS[0]);
-  const currentDirectionRef = useRef({ x: 0.5, y: 0.3 });
+  const currentDirectionRef = useRef({ x: 1, y: 0.5 });
+  const selectedSizeRef = useRef<'small' | 'medium' | 'large'>('medium');
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -74,61 +83,56 @@ export default function CanvasScreen() {
     currentDirectionRef.current = currentDirection;
   }, [currentDirection]);
 
+  useEffect(() => {
+    selectedSizeRef.current = selectedSize;
+  }, [selectedSize]);
+
   // Initialize particles
   useEffect(() => {
     const newParticles: Particle[] = [];
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 25; i++) {
       newParticles.push({
         id: `particle-${i}`,
         x: new Animated.Value(Math.random() * width),
         y: new Animated.Value(Math.random() * height),
-        opacity: 0.1 + Math.random() * 0.08,
-        speed: 0.2 + Math.random() * 0.5,
+        opacity: 0.08 + Math.random() * 0.1,
+        speed: 0.5 + Math.random() * 1.5,
       });
     }
     setParticles(newParticles);
 
-    // Animate particles continuously
+    // Animate particles with water-like flow
     newParticles.forEach(particle => {
-      const duration = 20000 / particle.speed;
-      Animated.loop(
-        Animated.sequence([
+      const animateParticle = () => {
+        const duration = 8000 / particle.speed;
+        Animated.parallel([
           Animated.timing(particle.x, {
-            toValue: Math.random() * width,
+            toValue: particle.speed > 1 ? width + 50 : Math.random() * width,
             duration: duration,
-            useNativeDriver: false,
-          }),
-          Animated.timing(particle.x, {
-            toValue: Math.random() * width,
-            duration: duration,
-            useNativeDriver: false,
-          }),
-        ])
-      ).start();
-
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(particle.y, {
-            toValue: Math.random() * height,
-            duration: duration * 1.2,
             useNativeDriver: false,
           }),
           Animated.timing(particle.y, {
             toValue: Math.random() * height,
-            duration: duration * 1.2,
+            duration: duration * 1.5,
             useNativeDriver: false,
           }),
-        ])
-      ).start();
+        ]).start(() => {
+          // Reset position and animate again
+          particle.x.setValue(particle.speed > 1 ? -50 : Math.random() * width);
+          particle.y.setValue(Math.random() * height);
+          animateParticle();
+        });
+      };
+      animateParticle();
     });
   }, []);
 
-  // Shift water current direction periodically
+  // Shift water current direction periodically - faster and more dynamic
   useEffect(() => {
     const interval = setInterval(() => {
       const newDir = {
-        x: -1 + Math.random() * 2,
-        y: -1 + Math.random() * 2,
+        x: 0.5 + Math.random() * 1.5, // Always flowing right-ish
+        y: -0.5 + Math.random() * 1,
       };
       setCurrentDirection(newDir);
     }, CURRENT_SHIFT_INTERVAL);
@@ -136,17 +140,17 @@ export default function CanvasScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Move ink drops with current
+  // Move ink drops with current - faster movement
   useEffect(() => {
     const moveInterval = setInterval(() => {
       setInkDrops(drops => 
         drops.map(drop => ({
           ...drop,
-          x: drop.x + currentDirection.x * 0.3,
-          y: drop.y + currentDirection.y * 0.3,
+          x: drop.x + currentDirection.x * 1.2, // Faster horizontal flow
+          y: drop.y + currentDirection.y * 0.8 + Math.sin(Date.now() / 500) * 0.3, // Wave motion
         })).filter(drop => Date.now() - drop.createdAt < FADE_DURATION)
       );
-    }, 50);
+    }, 30); // Faster updates
 
     return () => clearInterval(moveInterval);
   }, [currentDirection]);
@@ -178,8 +182,8 @@ export default function CanvasScreen() {
             const midY = (newDrop.y + nearbyDrops[0].y) / 2;
             
             const id = `ink-mixed-${Date.now()}`;
-            const scale = new Animated.Value(0);
-            const opacity = new Animated.Value(0);
+            const scale = new Animated.Value(0.1);
+            const opacity = new Animated.Value(0.5);
 
             const mixedDrop: InkDrop = {
               id,
@@ -188,7 +192,7 @@ export default function CanvasScreen() {
               color: mixedColor,
               scale,
               opacity,
-              size: 80,
+              size: 90,
               createdAt: Date.now(),
             };
 
@@ -223,11 +227,11 @@ export default function CanvasScreen() {
     }
   }, [addColorMix]);
 
-  const createInkDrop = useCallback((x: number, y: number, size: number = 80) => {
-    console.log('Creating ink drop at:', x, y, 'color:', selectedColorRef.current.name);
+  const createInkDrop = useCallback((x: number, y: number, customSize?: number) => {
+    const baseSize = customSize || INK_SIZES[selectedSizeRef.current].size;
     const id = `ink-${Date.now()}-${Math.random()}`;
-    const scale = new Animated.Value(0.1); // Start with small visible size
-    const opacity = new Animated.Value(0.5); // Start semi-visible
+    const scale = new Animated.Value(0.1);
+    const opacity = new Animated.Value(0.5);
 
     const newDrop: InkDrop = {
       id,
@@ -236,15 +240,12 @@ export default function CanvasScreen() {
       color: selectedColorRef.current,
       scale,
       opacity,
-      size: size + Math.random() * 30,
+      size: baseSize + Math.random() * (baseSize * 0.3),
       createdAt: Date.now(),
     };
 
     setColorsUsedInSession(prev => new Set([...prev, selectedColorRef.current.name]));
-    setInkDrops(prev => {
-      console.log('Ink drops count:', prev.length + 1);
-      return [...prev, newDrop];
-    });
+    setInkDrops(prev => [...prev, newDrop]);
 
     // Bloom animation
     Animated.parallel([
@@ -273,24 +274,18 @@ export default function CanvasScreen() {
     checkColorMixing(newDrop);
   }, [checkColorMixing]);
 
-  // Handle touch on canvas - works for both native and web
+  // Handle touch on canvas
   const handleTouch = useCallback((event: any) => {
-    // Try multiple ways to get coordinates
     const nativeEvent = event.nativeEvent || event;
     let x = 0, y = 0;
     
-    // For React Native native touch events
     if (nativeEvent.locationX !== undefined && nativeEvent.locationY !== undefined) {
       x = nativeEvent.locationX;
       y = nativeEvent.locationY;
-    }
-    // For web mouse/touch events
-    else if (nativeEvent.offsetX !== undefined && nativeEvent.offsetY !== undefined) {
+    } else if (nativeEvent.offsetX !== undefined && nativeEvent.offsetY !== undefined) {
       x = nativeEvent.offsetX;
       y = nativeEvent.offsetY;
-    }
-    // For web using clientX/Y relative to bounding rect
-    else if (nativeEvent.clientX !== undefined) {
+    } else if (nativeEvent.clientX !== undefined) {
       const rect = event.target?.getBoundingClientRect?.();
       if (rect) {
         x = nativeEvent.clientX - rect.left;
@@ -298,7 +293,6 @@ export default function CanvasScreen() {
       }
     }
     
-    console.log('Touch coordinates:', x, y);
     if (x > 0 && y > 0) {
       createInkDrop(x, y);
     }
@@ -323,7 +317,32 @@ export default function CanvasScreen() {
     }
     
     if (x > 0 && y > 0) {
-      createInkDrop(x, y, 30);
+      createInkDrop(x, y, INK_SIZES[selectedSizeRef.current].size * 0.5);
+    }
+  }, [createInkDrop]);
+
+  // Web-specific click handler
+  const handleWebClick = useCallback((event: React.MouseEvent) => {
+    const rect = (event.target as HTMLElement)?.getBoundingClientRect?.();
+    if (rect) {
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      if (x > 0 && y > 0) {
+        createInkDrop(x, y);
+      }
+    }
+  }, [createInkDrop]);
+
+  const handleWebMove = useCallback((event: React.MouseEvent) => {
+    if (event.buttons === 1) {
+      const rect = (event.target as HTMLElement)?.getBoundingClientRect?.();
+      if (rect) {
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        if (x > 0 && y > 0) {
+          createInkDrop(x, y, INK_SIZES[selectedSizeRef.current].size * 0.5);
+        }
+      }
     }
   }, [createInkDrop]);
 
@@ -347,41 +366,10 @@ export default function CanvasScreen() {
     }
   };
 
-  const handleSave = async () => {
-    if (data.saved_artworks.length >= 3) {
-      Alert.alert(
-        'Gallery Full',
-        'You have 3 saved artworks. Please delete one to save a new piece.',
-        [{ text: 'OK', style: 'default' }]
-      );
-      return;
-    }
-
-    try {
-      if (viewShotRef.current?.capture) {
-        const uri = await viewShotRef.current.capture();
-        const colorsUsed = Array.from(colorsUsedInSession);
-        const success = await saveArtwork(uri, colorsUsed);
-        
-        if (success) {
-          Animated.sequence([
-            Animated.timing(saveAnimation, {
-              toValue: 1,
-              duration: 200,
-              useNativeDriver: false,
-            }),
-            Animated.delay(1000),
-            Animated.timing(saveAnimation, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: false,
-            }),
-          ]).start();
-        }
-      }
-    } catch (error) {
-      console.error('Error saving artwork:', error);
-    }
+  // Reset canvas
+  const handleReset = () => {
+    setInkDrops([]);
+    setColorsUsedInSession(new Set());
   };
 
   const dismissUnlock = () => {
@@ -391,116 +379,98 @@ export default function CanvasScreen() {
 
   const isColorUnlocked = (colorName: string) => data.unlocked_colors.includes(colorName);
 
-  // Web-specific click handler
-  const handleWebClick = useCallback((event: React.MouseEvent) => {
-    const rect = (event.target as HTMLElement)?.getBoundingClientRect?.();
-    if (rect) {
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      console.log('Web click at:', x, y);
-      if (x > 0 && y > 0) {
-        createInkDrop(x, y);
-      }
-    }
-  }, [createInkDrop]);
-
-  const handleWebMove = useCallback((event: React.MouseEvent) => {
-    if (event.buttons === 1) { // Left mouse button is pressed
-      const rect = (event.target as HTMLElement)?.getBoundingClientRect?.();
-      if (rect) {
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        if (x > 0 && y > 0) {
-          createInkDrop(x, y, 30);
-        }
-      }
-    }
-  }, [createInkDrop]);
-
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: waterColor.bg }]}>
       {/* Canvas area */}
-      <ViewShot ref={viewShotRef} style={styles.canvas} options={{ format: 'jpg', quality: 0.8 }}>
-        <View 
-          ref={canvasRef}
-          style={styles.canvasInner}
-          onTouchStart={handleTouch}
-          onTouchMove={handleTouchMove}
-          onStartShouldSetResponder={() => true}
-          onMoveShouldSetResponder={() => true}
-          onResponderGrant={handleTouch}
-          onResponderMove={handleTouchMove}
-          // @ts-ignore - Web events
-          onClick={handleWebClick}
-          onMouseMove={handleWebMove}
-        >
-          {/* Water background with caustic effect */}
-          <View style={styles.waterBg}>
-            <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
-              <Defs>
-                <RadialGradient id="waterShimmer" cx="50%" cy="50%" r="60%">
-                  <Stop offset="0%" stopColor="#0f1a2a" stopOpacity="0.15" />
-                  <Stop offset="100%" stopColor="#0a0a0f" stopOpacity="0" />
-                </RadialGradient>
-              </Defs>
-              <Rect width={width} height={height} fill="#0a0a0f" />
-              <Ellipse 
-                cx={width / 2 + currentDirection.x * 50} 
-                cy={height / 2 + currentDirection.y * 50} 
-                rx={width * 0.6} 
-                ry={height * 0.4} 
-                fill="url(#waterShimmer)" 
-              />
-            </Svg>
-          </View>
-
-          {/* Particles */}
-          {particles.map(particle => (
-            <Animated.View
-              key={particle.id}
-              style={[
-                styles.particle,
-                {
-                  opacity: particle.opacity,
-                  left: particle.x,
-                  top: particle.y,
-                },
-              ]}
+      <View 
+        style={styles.canvas}
+        onTouchStart={handleTouch}
+        onTouchMove={handleTouchMove}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={handleTouch}
+        onResponderMove={handleTouchMove}
+        // @ts-ignore - Web events
+        onClick={handleWebClick}
+        onMouseMove={handleWebMove}
+      >
+        {/* Water background with caustic effect */}
+        <View style={styles.waterBg}>
+          <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
+            <Defs>
+              <RadialGradient id="waterShimmer" cx="30%" cy="40%" r="70%">
+                <Stop offset="0%" stopColor={waterColor.shimmer} stopOpacity="0.25" />
+                <Stop offset="100%" stopColor={waterColor.bg} stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="waterShimmer2" cx="70%" cy="60%" r="60%">
+                <Stop offset="0%" stopColor={waterColor.shimmer} stopOpacity="0.15" />
+                <Stop offset="100%" stopColor={waterColor.bg} stopOpacity="0" />
+              </RadialGradient>
+            </Defs>
+            <Rect width={width} height={height} fill={waterColor.bg} />
+            <Ellipse 
+              cx={width * 0.3 + currentDirection.x * 30} 
+              cy={height * 0.4 + currentDirection.y * 20} 
+              rx={width * 0.5} 
+              ry={height * 0.3} 
+              fill="url(#waterShimmer)" 
             />
-          ))}
-
-          {/* Ink drops */}
-          {inkDrops.map(drop => (
-            <Animated.View
-              key={drop.id}
-              style={[
-                styles.inkDrop,
-                {
-                  left: drop.x - drop.size / 2,
-                  top: drop.y - drop.size / 2,
-                  width: drop.size,
-                  height: drop.size,
-                  opacity: drop.opacity,
-                  transform: [{ scale: drop.scale }],
-                  backgroundColor: drop.color.hex,
-                  borderRadius: drop.size / 2,
-                  // @ts-ignore - Web box shadow
-                  boxShadow: `0 0 ${drop.size * 0.5}px ${drop.color.glow}, 0 0 ${drop.size}px ${drop.color.hex}`,
-                },
-              ]}
+            <Ellipse 
+              cx={width * 0.7 + currentDirection.x * 20} 
+              cy={height * 0.6 + currentDirection.y * 15} 
+              rx={width * 0.4} 
+              ry={height * 0.25} 
+              fill="url(#waterShimmer2)" 
             />
-          ))}
+          </Svg>
         </View>
-      </ViewShot>
+
+        {/* Particles */}
+        {particles.map(particle => (
+          <Animated.View
+            key={particle.id}
+            style={[
+              styles.particle,
+              {
+                opacity: particle.opacity,
+                left: particle.x,
+                top: particle.y,
+              },
+            ]}
+          />
+        ))}
+
+        {/* Ink drops */}
+        {inkDrops.map(drop => (
+          <Animated.View
+            key={drop.id}
+            style={[
+              styles.inkDrop,
+              {
+                left: drop.x - drop.size / 2,
+                top: drop.y - drop.size / 2,
+                width: drop.size,
+                height: drop.size,
+                opacity: drop.opacity,
+                transform: [{ scale: drop.scale }],
+                backgroundColor: drop.color.hex,
+                borderRadius: drop.size / 2,
+                // @ts-ignore - Web box shadow
+                boxShadow: `0 0 ${drop.size * 0.5}px ${drop.color.glow}, 0 0 ${drop.size}px ${drop.color.hex}`,
+              },
+            ]}
+          />
+        ))}
+      </View>
 
       {/* Header */}
       <View style={[styles.header, { top: insets.top + 10 }]}>
         <Text style={styles.title}>Ink & Water</Text>
         <TouchableOpacity 
-          style={styles.galleryButton}
-          onPress={() => router.push('/gallery')}
+          style={styles.resetButton}
+          onPress={handleReset}
         >
-          <Ionicons name="images-outline" size={26} color="#ffffff80" />
+          <Ionicons name="refresh" size={24} color="#ffffff80" />
         </TouchableOpacity>
       </View>
 
@@ -511,15 +481,41 @@ export default function CanvasScreen() {
         </Animated.Text>
       )}
 
-      {/* Save button */}
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Ionicons name="bookmark-outline" size={28} color="#ffffff70" />
-      </TouchableOpacity>
+      {/* Size selector */}
+      <View style={styles.sizeSelector}>
+        {(Object.keys(INK_SIZES) as Array<keyof typeof INK_SIZES>).map(size => (
+          <TouchableOpacity
+            key={size}
+            style={[
+              styles.sizeButton,
+              selectedSize === size && styles.sizeButtonSelected,
+            ]}
+            onPress={() => setSelectedSize(size)}
+          >
+            <Text style={[
+              styles.sizeButtonText,
+              selectedSize === size && styles.sizeButtonTextSelected,
+            ]}>
+              {INK_SIZES[size].label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-      {/* Saved confirmation */}
-      <Animated.View style={[styles.savedConfirm, { opacity: saveAnimation }]}>
-        <Text style={styles.savedText}>Saved</Text>
-      </Animated.View>
+      {/* Water color selector */}
+      <View style={styles.waterColorSelector}>
+        {WATER_COLORS.map(wc => (
+          <TouchableOpacity
+            key={wc.name}
+            style={[
+              styles.waterColorButton,
+              { backgroundColor: wc.bg, borderColor: wc.shimmer },
+              waterColor.name === wc.name && styles.waterColorSelected,
+            ]}
+            onPress={() => setWaterColor(wc)}
+          />
+        ))}
+      </View>
 
       {/* Color swatches */}
       <View style={[styles.swatchContainer, { paddingBottom: insets.bottom + 10 }]}>
@@ -572,13 +568,14 @@ export default function CanvasScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0f',
   },
   canvas: {
     ...StyleSheet.absoluteFillObject,
   },
-  canvasInner: {
-    flex: 1,
+  waterBg: {
+    ...StyleSheet.absoluteFillObject,
+    // @ts-ignore - Web pointer events
+    pointerEvents: 'none',
   },
   particle: {
     position: 'absolute',
@@ -586,11 +583,6 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 1.5,
     backgroundColor: '#ffffff',
-  },
-  waterBg: {
-    ...StyleSheet.absoluteFillObject,
-    // @ts-ignore - Web pointer events
-    pointerEvents: 'none',
   },
   inkDrop: {
     position: 'absolute',
@@ -611,12 +603,14 @@ const styles = StyleSheet.create({
     color: '#ffffff80',
     letterSpacing: 2,
   },
-  galleryButton: {
+  resetButton: {
     padding: 8,
+    backgroundColor: '#ffffff10',
+    borderRadius: 20,
   },
   colorName: {
     position: 'absolute',
-    bottom: 120,
+    bottom: 130,
     alignSelf: 'center',
     color: '#ffffff90',
     fontSize: 14,
@@ -624,38 +618,59 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     textTransform: 'uppercase',
   },
-  saveButton: {
+  sizeSelector: {
     position: 'absolute',
-    bottom: 120,
-    right: 20,
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    right: 15,
+    top: '40%',
     backgroundColor: '#ffffff10',
+    borderRadius: 20,
+    padding: 6,
+    gap: 6,
+  },
+  sizeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#ffffff05',
   },
-  savedConfirm: {
-    position: 'absolute',
-    bottom: 180,
-    alignSelf: 'center',
-    backgroundColor: '#ffffff15',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
+  sizeButtonSelected: {
+    backgroundColor: '#ffffff30',
   },
-  savedText: {
-    color: '#ffffff90',
+  sizeButtonText: {
+    color: '#ffffff60',
     fontSize: 14,
-    fontWeight: '300',
-    letterSpacing: 2,
+    fontWeight: '600',
+  },
+  sizeButtonTextSelected: {
+    color: '#ffffff',
+  },
+  waterColorSelector: {
+    position: 'absolute',
+    left: 15,
+    top: '40%',
+    backgroundColor: '#ffffff10',
+    borderRadius: 20,
+    padding: 6,
+    gap: 6,
+  },
+  waterColorButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  waterColorSelected: {
+    borderWidth: 3,
+    borderColor: '#ffffff60',
   },
   swatchContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#0a0a0f90',
+    backgroundColor: '#00000080',
     paddingTop: 15,
   },
   swatchScroll: {

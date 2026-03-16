@@ -55,13 +55,6 @@ export default function RootLayout() {
         >
           <Stack.Screen name="index" />
           <Stack.Screen name="canvas" />
-          <Stack.Screen 
-            name="gallery" 
-            options={{ 
-              animation: 'slide_from_right',
-              animationDuration: 400,
-            }} 
-          />
         </Stack>
       </AppProvider>
     </GestureHandlerRootView>
