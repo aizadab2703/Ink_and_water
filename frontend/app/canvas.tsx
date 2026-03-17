@@ -181,7 +181,7 @@ export default function CanvasScreen() {
             const midX = (newDrop.x + nearbyDrops[0].x) / 2;
             const midY = (newDrop.y + nearbyDrops[0].y) / 2;
             
-            const id = `ink-mixed-${Date.now()}`;
+            const id = `ink-mixed-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const scale = new Animated.Value(0.1);
             const opacity = new Animated.Value(0.5);
 
@@ -196,7 +196,13 @@ export default function CanvasScreen() {
               createdAt: Date.now(),
             };
 
-            setInkDrops(prev => [...prev, mixedDrop]);
+            setInkDrops(prev => {
+              // Prevent duplicate keys
+              if (prev.some(drop => drop.id === id)) {
+                return prev;
+              }
+              return [...prev, mixedDrop];
+            });
             setColorsUsedInSession(prev => new Set([...prev, mixedColor.name]));
 
             Animated.parallel([
@@ -229,7 +235,7 @@ export default function CanvasScreen() {
 
   const createInkDrop = useCallback((x: number, y: number, customSize?: number) => {
     const baseSize = customSize || INK_SIZES[selectedSizeRef.current].size;
-    const id = `ink-${Date.now()}-${Math.random()}`;
+    const id = `ink-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 5)}`;
     const scale = new Animated.Value(0.1);
     const opacity = new Animated.Value(0.5);
 
@@ -245,7 +251,13 @@ export default function CanvasScreen() {
     };
 
     setColorsUsedInSession(prev => new Set([...prev, selectedColorRef.current.name]));
-    setInkDrops(prev => [...prev, newDrop]);
+    setInkDrops(prev => {
+      // Prevent duplicate keys
+      if (prev.some(drop => drop.id === id)) {
+        return prev;
+      }
+      return [...prev, newDrop];
+    });
 
     // Bloom animation
     Animated.parallel([
